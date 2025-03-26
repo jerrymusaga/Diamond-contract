@@ -8,6 +8,7 @@ import "../contracts/facets/OwnershipFacet.sol";
 import "forge-std/Test.sol";
 import "../contracts/Diamond.sol";
 import "../contracts/facets/SimpleFacets.sol"; 
+import "../contracts/facets/SimpleFacets2.sol";
 
 contract DiamondDeployer is Test, IDiamondCut {
     Diamond public diamond;
@@ -15,6 +16,7 @@ contract DiamondDeployer is Test, IDiamondCut {
     DiamondLoupeFacet public dLoupe;
     OwnershipFacet public ownerF;
     SimpleFacets public simpleFacet; 
+    SimpleFacets2 public simpleFacets2;
 
     function generateSelectors(string memory _facetName) internal returns (bytes4[] memory) {
         string[] memory cmd = new string[](3);
@@ -31,11 +33,12 @@ contract DiamondDeployer is Test, IDiamondCut {
         dLoupe = new DiamondLoupeFacet();
         ownerF = new OwnershipFacet();
         simpleFacet = new SimpleFacets();
+        simpleFacets2 = new SimpleFacets2();
 
         diamond = new Diamond(address(this), address(dCutFacet));
 
         // Create an array for our facet cuts
-        FacetCut[] memory cut = new FacetCut[](3);
+        FacetCut[] memory cut = new FacetCut[](4);
 
         // Add DiamondLoupeFacet
         cut[0] = FacetCut({
@@ -56,6 +59,12 @@ contract DiamondDeployer is Test, IDiamondCut {
             facetAddress: address(simpleFacet),
             action: FacetCutAction.Add,
             functionSelectors: generateSelectors("SimpleFacets")
+        });
+
+        cut[3] = FacetCut({
+            facetAddress: address(simpleFacets2),
+            action: FacetCutAction.Add,
+            functionSelectors: generateSelectors("SimpleFacets2")
         });
 
         // Make the diamondCut call
@@ -187,6 +196,98 @@ contract DiamondDeployer is Test, IDiamondCut {
      
         assertEq(SimpleFacets(address(diamond)).getUserNote(user1), testNote);
     }
+
+    function testClaimReward() public {
+        address user1 = address(0x1);
+        vm.prank(user1);
+        SimpleFacets(address(diamond)).addCredits(user1, 100);
+        
+        uint256 initialCredits = SimpleFacets(address(diamond)).getUserCredits(user1);
+        uint256 claimAmount = 50;
+        
+        vm.prank(user1);
+        SimpleFacets2(address(diamond)).claimReward(claimAmount);
+        
+        assertEq(SimpleFacets(address(diamond)).getUserCredits(user1), initialCredits - claimAmount);
+        
+        vm.prank(user1);
+        SimpleFacets2(address(diamond)).claimReward(10);
+    }
+
+    
+    function testUpdateUserLevel() public {
+        address user1 = address(0x1);
+        address owner = address(this);
+        
+        uint256 newLevel = 3;
+        vm.prank(owner);
+        SimpleFacets2(address(diamond)).updateUserLevel(user1, newLevel);
+        
+        assertEq(SimpleFacets2(address(diamond)).getUserLevel(user1), newLevel);
+        
+       
+        vm.prank(owner);
+        vm.expectRevert("Invalid level");
+        SimpleFacets2(address(diamond)).updateUserLevel(user1, 0);
+        
+        vm.prank(owner);
+        vm.expectRevert("Invalid level");
+        SimpleFacets2(address(diamond)).updateUserLevel(user1, 11);
+    }
+
+    
+    function testMakeDeposit() public {
+        address user1 = address(0x1);
+        uint256 depositAmount = 100;
+        
+        vm.prank(user1);
+        SimpleFacets2(address(diamond)).makeDeposit(depositAmount);
+        
+        assertEq(SimpleFacets(address(diamond)).getUserCredits(user1), depositAmount);
+        assertEq(SimpleFacets2(address(diamond)).getTotalDeposits(), depositAmount);
+        
+        
+        vm.prank(user1);
+        SimpleFacets2(address(diamond)).makeDeposit(50);
+    }
+
+   
+    function testMakeWithdrawal() public {
+        address user1 = address(0x1);
+        uint256 initialAmount = 100;
+        uint256 withdrawAmount = 30;
+        
+        vm.prank(user1);
+        SimpleFacets2(address(diamond)).makeDeposit(initialAmount);
+        
+        vm.prank(user1);
+        SimpleFacets2(address(diamond)).makeWithdrawal(withdrawAmount);
+        
+        assertEq(SimpleFacets(address(diamond)).getUserCredits(user1), initialAmount - withdrawAmount);
+        
+
+        vm.prank(user1);
+        vm.expectRevert("Insufficient balance");
+        SimpleFacets2(address(diamond)).makeWithdrawal(initialAmount * 2);
+    }
+
+    
+    function testUpdateSetting() public {
+        address owner = address(this);
+        bytes32 settingName = keccak256("MAX_LIMIT");
+        uint256 settingValue = 500;
+        
+        vm.prank(owner);
+        SimpleFacets2(address(diamond)).updateSetting(settingName, settingValue);
+        
+        assertEq(SimpleFacets2(address(diamond)).getSetting(settingName), settingValue);
+        
+      
+        vm.prank(owner);
+        vm.expectRevert("Value must > 0");
+        SimpleFacets2(address(diamond)).updateSetting(settingName, 0);
+    }
+
 
     function diamondCut(
         FacetCut[] calldata _diamondCut,

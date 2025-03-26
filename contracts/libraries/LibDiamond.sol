@@ -55,6 +55,10 @@ library LibDiamond {
         mapping(address => uint256) userCredits;
         mapping(address => bool) userWhitelisted;
         mapping(address => string) userNotes;
+
+        uint totalDeposits;
+        mapping(address => uint256) userLevels;
+        mapping(bytes32 => uint256) settings;
     }
 
     function diamondStorage()
@@ -159,6 +163,74 @@ library LibDiamond {
     function getUserNote(address user) external view returns (string memory) {
         DiamondStorage storage ds = diamondStorage();
         return ds.userNotes[user];
+    }
+
+    event RewardClaimed(address user, uint256 amount);
+    event UserLevelUpdated(address user, uint256 level);
+    event DepositMade(address user, uint256 amount);
+    event WithdrawalMade(address user, uint256 amount);
+    event SettingsUpdated(bytes32 setting, uint256 value);
+
+     function claimReward(uint256 amount) internal {
+        DiamondStorage storage ds = diamondStorage();
+        require(ds.userCredits[msg.sender] >= amount, "Insufficient credits");
+        require(amount > 0, "Amount must be positive");
+        
+        ds.userCredits[msg.sender] -= amount;
+        emit RewardClaimed(msg.sender, amount);
+    }
+
+    function updateUserLevel(address user, uint256 level) internal {
+        DiamondStorage storage ds = diamondStorage();
+        require(level > 0 && level <= 10, "Invalid level");
+        
+        ds.userLevels[user] = level;
+        emit UserLevelUpdated(user, level);
+    }
+
+    
+    function makeDeposit(uint256 amount) internal {
+        DiamondStorage storage ds = diamondStorage();
+        require(amount > 0, "amount must > 0");
+        
+        ds.totalDeposits += amount; 
+        ds.userCredits[msg.sender] += amount;
+        emit DepositMade(msg.sender, amount);
+    }
+
+    
+    function makeWithdrawal(uint256 amount) internal {
+        DiamondStorage storage ds = diamondStorage();
+        require(amount > 0, "Amount must > 0");
+        require(ds.userCredits[msg.sender] >= amount, "Insufficient balance");
+        
+        ds.userCredits[msg.sender] -= amount;
+        emit WithdrawalMade(msg.sender, amount);
+    }
+
+   
+    function updateSetting(bytes32 setting, uint256 value) internal {
+        DiamondStorage storage ds = diamondStorage();
+        require(value > 0, "Value must > 0");
+        
+        ds.settings[setting] = value;
+        emit SettingsUpdated(setting, value);
+    }
+
+    
+    function getUserLevel(address user) external view returns (uint256) {
+        DiamondStorage storage ds = diamondStorage();
+        return ds.userLevels[user];
+    }
+
+    function getTotalDeposits() external view returns (uint256) {
+        DiamondStorage storage ds = diamondStorage();
+        return ds.totalDeposits;
+    }
+
+    function getSetting(bytes32 setting) external view returns (uint256) {
+        DiamondStorage storage ds = diamondStorage();
+        return ds.settings[setting];
     }
 
     event DiamondCut(
